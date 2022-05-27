@@ -18,56 +18,56 @@ type onboardWorkflow struct {
 	labelerAudience string
 	omsAudience     string
 
-	createAccountClient       remsUC.AccountCreateUsecase
-	deleteAccountClient       remsUC.AccountDeleteUsecase
-	addAuth0ClientIDClient    remsUC.AccountAddAuth0ClientIDUsecase
-	createServiceConfigClient remsUC.AccountServiceConfigCreateUsecase
+	createAccountUsecase       remsUC.AccountCreateUsecase
+	deleteAccountUsecase       remsUC.AccountDeleteUsecase
+	addAuth0ClientIDUsecase    remsUC.AccountAddAuth0ClientIDUsecase
+	createServiceConfigUsecase remsUC.AccountServiceConfigCreateUsecase
 
-	createAuth0ClientClient auth0ClientUC.ClientCreateUsecase
-	addAuth0GrantsClient    auth0ClientUC.ClientGrantCreateUsecase
-	deleteAuth0ClientClient auth0ClientUC.ClientDeleteUsecase
+	createAuth0ClientUsecase auth0ClientUC.ClientCreateUsecase
+	addAuth0GrantsUsecase    auth0ClientUC.ClientGrantCreateUsecase
+	deleteAuth0ClientUsecase auth0ClientUC.ClientDeleteUsecase
 
-	createOMSRetailerClient OMSRetailerCreateUsecase
+	createOMSRetailerUsecase OMSRetailerCreateUsecase
 }
 
 func NewOnboardWorkflow(
 	labelerAudience string,
 	omsAudience string,
 
-	createAccountClient remsUC.AccountCreateUsecase,
-	deleteAccountClient remsUC.AccountDeleteUsecase,
-	addAuth0ClientIDClient remsUC.AccountAddAuth0ClientIDUsecase,
-	createServiceConfigClient remsUC.AccountServiceConfigCreateUsecase,
+	createAccountUsecase remsUC.AccountCreateUsecase,
+	deleteAccountUsecase remsUC.AccountDeleteUsecase,
+	addAuth0ClientIDUsecase remsUC.AccountAddAuth0ClientIDUsecase,
+	createServiceConfigUsecase remsUC.AccountServiceConfigCreateUsecase,
 
-	createAuth0ClientClient auth0ClientUC.ClientCreateUsecase,
-	deleteAuth0ClientClient auth0ClientUC.ClientDeleteUsecase,
-	addAuth0GrantsClient auth0ClientUC.ClientGrantCreateUsecase,
+	createAuth0ClientUsecase auth0ClientUC.ClientCreateUsecase,
+	deleteAuth0ClientUsecase auth0ClientUC.ClientDeleteUsecase,
+	addAuth0GrantsUsecase auth0ClientUC.ClientGrantCreateUsecase,
 
 	createOMSRetailerClient OMSRetailerCreateUsecase,
 ) onboardUC.OnboardUsecase {
 	return &onboardWorkflow{
-		labelerAudience:           labelerAudience,
-		omsAudience:               omsAudience,
-		createAccountClient:       createAccountClient,
-		createAuth0ClientClient:   createAuth0ClientClient,
-		addAuth0GrantsClient:      addAuth0GrantsClient,
-		addAuth0ClientIDClient:    addAuth0ClientIDClient,
-		createServiceConfigClient: createServiceConfigClient,
-		createOMSRetailerClient:   createOMSRetailerClient,
-		deleteAccountClient:       deleteAccountClient,
-		deleteAuth0ClientClient:   deleteAuth0ClientClient,
+		labelerAudience:            labelerAudience,
+		omsAudience:                omsAudience,
+		createAccountUsecase:       createAccountUsecase,
+		createAuth0ClientUsecase:   createAuth0ClientUsecase,
+		addAuth0GrantsUsecase:      addAuth0GrantsUsecase,
+		addAuth0ClientIDUsecase:    addAuth0ClientIDUsecase,
+		createServiceConfigUsecase: createServiceConfigUsecase,
+		createOMSRetailerUsecase:   createOMSRetailerClient,
+		deleteAccountUsecase:       deleteAccountUsecase,
+		deleteAuth0ClientUsecase:   deleteAuth0ClientUsecase,
 	}
 }
 
 func (o *onboardWorkflow) Onboard(dto onboardUC.OnboardDTO, authorization string) (*onboardUC.OnboardResultDTO, error) {
-	account, err := o.createAccountClient.Create(dto.Account)
+	account, err := o.createAccountUsecase.Create(dto.Account)
 	if err != nil {
 		return nil, err
 	}
 
 	setClientName(&dto.Auth0Client, account)
 
-	auth0Client, err := o.createAuth0ClientClient.Create(dto.Auth0Client)
+	auth0Client, err := o.createAuth0ClientUsecase.Create(dto.Auth0Client)
 	if err != nil {
 		o.rollback(account, nil)
 
@@ -75,7 +75,7 @@ func (o *onboardWorkflow) Onboard(dto onboardUC.OnboardDTO, authorization string
 	}
 
 	if o.labelerAudience != "" {
-		go o.addAuth0GrantsClient.Create(auth0ClientUC.ClientGrantCreateDTO{
+		go o.addAuth0GrantsUsecase.Create(auth0ClientUC.ClientGrantCreateDTO{
 			ClientID: auth0Client.ID,
 			Audience: o.labelerAudience,
 			Scope:    defaultGrantScope,
@@ -83,14 +83,14 @@ func (o *onboardWorkflow) Onboard(dto onboardUC.OnboardDTO, authorization string
 	}
 
 	if o.omsAudience != "" {
-		go o.addAuth0GrantsClient.Create(auth0ClientUC.ClientGrantCreateDTO{
+		go o.addAuth0GrantsUsecase.Create(auth0ClientUC.ClientGrantCreateDTO{
 			ClientID: auth0Client.ID,
 			Audience: o.omsAudience,
 			Scope:    defaultGrantScope,
 		})
 	}
 
-	account, err = o.addAuth0ClientIDClient.AddAuth0ClientID(remsUC.AccountAddAuth0ClientIDDTO{
+	account, err = o.addAuth0ClientIDUsecase.AddAuth0ClientID(remsUC.AccountAddAuth0ClientIDDTO{
 		ID:            account.ID,
 		Auth0ClientID: auth0Client.ID,
 	})
@@ -100,14 +100,14 @@ func (o *onboardWorkflow) Onboard(dto onboardUC.OnboardDTO, authorization string
 		return nil, err
 	}
 
-	accountServiceConfig, err := o.createServiceConfigClient.Create(getAccountSeviceConfigDTO(account.ID))
+	accountServiceConfig, err := o.createServiceConfigUsecase.Create(getAccountSeviceConfigDTO(account.ID))
 	if err != nil {
 		o.rollback(account, auth0Client)
 
 		return nil, err
 	}
 
-	err = o.createOMSRetailerClient.Create(account.ID, account.Name)
+	err = o.createOMSRetailerUsecase.Create(account.ID, account.Name)
 
 	omsResponse := "OMS Retailer Created"
 	if err != nil {
@@ -133,9 +133,9 @@ func getAccountSeviceConfigDTO(accountID string) remsUC.AccountServiceConfigCrea
 
 func (o *onboardWorkflow) rollback(account *rems.Account, auth0Client *client.Client) {
 	if account != nil {
-		go o.deleteAccountClient.Delete(remsUC.AccountDeleteDTO{ID: account.ID})
+		go o.deleteAccountUsecase.Delete(remsUC.AccountDeleteDTO{ID: account.ID})
 	}
 	if auth0Client != nil {
-		go o.deleteAuth0ClientClient.Delete(auth0ClientUC.ClientDeleteDTO{ID: auth0Client.ID})
+		go o.deleteAuth0ClientUsecase.Delete(auth0ClientUC.ClientDeleteDTO{ID: auth0Client.ID})
 	}
 }
